@@ -15,7 +15,7 @@ import java.util.List;
 @RestController
 public class MainController {
 
-    // код в этом классе просто тестирует работу клиента статистики
+    // код в этом классе просто тестирует работу клиента статистики...
 
     private final StatClient statClient;
 
