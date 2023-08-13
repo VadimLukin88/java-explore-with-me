@@ -47,6 +47,9 @@ public class StatController {
         } catch (DateTimeParseException e) {
             throw new ValidationException("Can not parse time in request parameter");
         }
+        if (endTime.isBefore(startTime)) {
+            throw new ValidationException("End time must be after start time");
+        }
         return statService.getStatistics(startTime, endTime, uris, unique);
     }
 
