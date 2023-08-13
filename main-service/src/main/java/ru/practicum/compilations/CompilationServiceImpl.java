@@ -5,6 +5,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.compilations.dto.CompilationDto;
 import ru.practicum.compilations.dto.NewCompilationDto;
 import ru.practicum.compilations.dto.UpdateCompilationRequest;
@@ -15,13 +16,13 @@ import ru.practicum.events.dto.EventShortDto;
 import ru.practicum.events.models.Event;
 import ru.practicum.exceptions.DataNotFoundException;
 
-import javax.transaction.Transactional;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-public class CompilationServiceImpl implements CompilationService{
+public class CompilationServiceImpl implements CompilationService {
 
     private final CompilationRepository compilationRepository;
     private final EventRepository eventRepository;
@@ -65,10 +66,10 @@ public class CompilationServiceImpl implements CompilationService{
     @Override
     @Transactional
     public CompilationDto addCompilation(NewCompilationDto newCompDto) {
-        if(newCompDto.getPinned() == null) {
+        if (newCompDto.getPinned() == null) {
             newCompDto.setPinned(false);
         }
-        if(newCompDto.getEvents() == null) {
+        if (newCompDto.getEvents() == null) {
             newCompDto.setEvents(new ArrayList<>());
         }
         Compilation compilation = CompilationMapper.mapDtoToCompilation(newCompDto);
@@ -112,7 +113,8 @@ public class CompilationServiceImpl implements CompilationService{
             compilation.setPinned(updCompReq.getPinned());
         }
         List<Event> eventList = new ArrayList<>();
-        if (updCompReq.getEvents() != null) {
+
+        if (updCompReq.getEvents() != null && updCompReq.getEvents().size() > 0) {
             eventList = eventRepository.findAllById(updCompReq.getEvents());
             compilation.setEventList(eventList);
         }

@@ -2,12 +2,10 @@ package ru.practicum.events.models;
 
 import lombok.*;
 import ru.practicum.categories.models.Category;
-import ru.practicum.requests.models.ParticipationRequest;
 import ru.practicum.users.models.User;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Getter
 @Setter
@@ -51,7 +49,4 @@ public class Event {
     private LocalDateTime createdOn;        // Дата и время создания события
     @Column(name = "published_on")
     private LocalDateTime publishedOn;      // Дата и время публикации события
-    // Написать чтобы можно было получать список запросов на участие
-    @OneToMany(mappedBy = "event", fetch = FetchType.LAZY)
-    List<ParticipationRequest> requestList;
 }

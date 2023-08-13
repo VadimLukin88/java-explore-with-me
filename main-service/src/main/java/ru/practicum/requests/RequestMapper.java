@@ -7,8 +7,6 @@ import ru.practicum.requests.dto.ParticipationRequestDto;
 import ru.practicum.requests.models.ParticipationRequest;
 import ru.practicum.users.models.User;
 
-import java.time.format.DateTimeFormatter;
-
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class RequestMapper {
 

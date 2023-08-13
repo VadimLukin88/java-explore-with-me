@@ -22,7 +22,7 @@ public class ExceptionsHandler {
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
     @ResponseBody
-    public ResponseEntity<ApiError> handleMissingPathVariableException (MissingServletRequestParameterException e) {
+    public ResponseEntity<ApiError> handleMissingPathVariableException(MissingServletRequestParameterException e) {
         ApiError errorMessage = ApiError.builder()
             .status(HttpStatus.BAD_REQUEST.getReasonPhrase())
             .reason("Incorrectly made request.")

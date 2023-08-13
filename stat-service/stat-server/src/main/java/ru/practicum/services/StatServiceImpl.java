@@ -9,6 +9,7 @@ import ru.practicum.models.StatMapper;
 import ru.practicum.repositories.StatRepository;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -41,6 +42,9 @@ public class StatServiceImpl implements StatService {
                 dtoList = statRepository.getAllStat(startTime, endTime);
             }
         }
+         if (dtoList == null) {
+             return new ArrayList<>();
+         }
         return dtoList;
     }
 

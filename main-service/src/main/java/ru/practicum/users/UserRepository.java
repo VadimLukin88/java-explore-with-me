@@ -14,4 +14,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query(value = "SELECT u FROM User as u WHERE "
                    + ":ids IS NULL OR u.id IN :ids ")
     List<User> findUsers(List<Long> ids, Pageable pageable);
+
+    boolean existsByName(String name);
 }

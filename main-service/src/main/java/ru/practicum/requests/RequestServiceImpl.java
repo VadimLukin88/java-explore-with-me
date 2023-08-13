@@ -3,6 +3,7 @@ package ru.practicum.requests;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.events.EventRepository;
 import ru.practicum.events.models.Event;
 import ru.practicum.events.models.EventState;
@@ -16,7 +17,6 @@ import ru.practicum.requests.models.ParticipationRequest;
 import ru.practicum.users.UserRepository;
 import ru.practicum.users.models.User;
 
-import javax.transaction.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,11 +42,10 @@ public class RequestServiceImpl implements RequestService {
     // В случае, если по заданным фильтрам не найдено ни одной заявки, возвращает пустой список
     @Override
     @Transactional
-    public ParticipationRequestDto getRequestForEvent(Long userId, Long eventId) {
-        ParticipationRequest request = requestRepository.findByEvent_IdAndRequester_Id(eventId, userId)
-            .orElseThrow(() -> new DataNotFoundException("Request not found", HttpStatus.NOT_FOUND));
+    public List<ParticipationRequestDto> getRequestForEvent(Long userId, Long eventId) {
+        List<ParticipationRequest> requests = requestRepository.findByEvent_Id(eventId);
 
-        return RequestMapper.mapReqToDto(request);
+        return requests.stream().map(RequestMapper::mapReqToDto).collect(Collectors.toList());
     }
 
     // Изменение статуса (подтверждена, отменена) заявок на участие в событии текущего пользователя (для Private Event контроллера)
@@ -62,10 +61,10 @@ public class RequestServiceImpl implements RequestService {
                                                               Long eventId,
                                                               EventRequestStatusUpdateRequest statusUpdRequest) {
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new DataNotFoundException("User not found", HttpStatus.NOT_FOUND));
+                                  .orElseThrow(() -> new DataNotFoundException("User not found", HttpStatus.NOT_FOUND));
 
         Event event = eventRepository.findById(eventId)
-            .orElseThrow(() -> new DataNotFoundException("Event not found", HttpStatus.NOT_FOUND));
+                                     .orElseThrow(() -> new DataNotFoundException("Event not found", HttpStatus.NOT_FOUND));
 
         // получаем из БД список заявок на участие
         List<ParticipationRequest> requestList = requestRepository.findAllById(statusUpdRequest.getRequestIds());
@@ -73,16 +72,24 @@ public class RequestServiceImpl implements RequestService {
         EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
 
         if (statusUpdRequest.getStatus().equals(RequestStatus.REJECTED)) {
-            requestList.forEach(r -> r.setStatus(RequestStatus.REJECTED));
+            requestList.forEach(r -> {
+                                        if (r.getStatus().equals(RequestStatus.CONFIRMED)) {
+                                            throw new ValidationException("Request confirmed and can't be rejected", HttpStatus.CONFLICT);
+                                        }
+                                        r.setStatus(RequestStatus.REJECTED);
+                                      });
             requestRepository.saveAll(requestList);
             result.setRejectedRequests(requestList.stream().map(RequestMapper::mapReqToDto).collect(Collectors.toList()));
             return result;
         }
         // тут надо получить лимит по участникам для события и проверить сколько заявок на участие уже создано.
-        // сделать отдельный запрос в репозитории чисто для кол-ва подтверждённых запросов???
-        long reqCount = requestRepository.getByEvent_IdInAndStatus(Arrays.asList(eventId), RequestStatus.CONFIRMED).stream().count();
+        long reqCount = requestRepository.findByEvent_IdInAndStatus(Arrays.asList(eventId), RequestStatus.CONFIRMED).stream().count() + 1;
 
         long reqLimit = event.getParticipantLimit();
+
+        if (reqCount > reqLimit) {
+            throw new ValidationException("Request limit reached", HttpStatus.CONFLICT);
+        }
 
         List<Long> confirmed = new ArrayList<>();
 
@@ -90,8 +97,9 @@ public class RequestServiceImpl implements RequestService {
 
         if (statusUpdRequest.getStatus().equals(RequestStatus.CONFIRMED) && reqLimit != 0) {
             for (Long id : statusUpdRequest.getRequestIds()) {
-                if (reqCount >= reqLimit) {
+                if (reqCount > reqLimit) {
                     rejected.add(id);
+                    break;
                 } else {
                     confirmed.add(id);
                 }
@@ -116,6 +124,7 @@ public class RequestServiceImpl implements RequestService {
     @Transactional
     public List<ParticipationRequestDto> getUserRequests(Long userId) {
         List<ParticipationRequest> reqList = requestRepository.findByRequester_Id(userId);
+
         return reqList.stream().map(RequestMapper::mapReqToDto).collect(Collectors.toList());
     }
 
@@ -149,13 +158,14 @@ public class RequestServiceImpl implements RequestService {
         }
         ParticipationRequest request = new ParticipationRequest(null, now, event, user, RequestStatus.PENDING);
 
-        if (!event.getRequestModeration() && event.getParticipantLimit() == 0) {
+        if (event.getParticipantLimit() == 0 || !event.getRequestModeration()) {
             request.setStatus(RequestStatus.CONFIRMED);
         }
         // Получаем кол-во подтверждённых заявок на участие в событии.
-        long reqCount = requestRepository.countByEvent_IdAndStatus(eventId, RequestStatus.CONFIRMED);
+//        long reqCount = requestRepository.countByEvent_Id(eventId).orElse(0L);
+        long reqCount = requestRepository.findByEvent_IdInAndStatus(Arrays.asList(eventId), RequestStatus.CONFIRMED).stream().count() + 1;
 
-        if (reqCount >= event.getParticipantLimit()) {
+        if (event.getParticipantLimit() != 0 && reqCount > event.getParticipantLimit()) {
             throw new ValidationException("Request limit reached", HttpStatus.CONFLICT);
         }
         return RequestMapper.mapReqToDto(requestRepository.save(request));

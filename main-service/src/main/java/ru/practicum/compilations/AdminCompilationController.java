@@ -34,7 +34,8 @@ public class AdminCompilationController {
 
     //Удаление подборки
     @DeleteMapping("/{compId}")
-    public void deleteCompilation(@RequestParam Long compId) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCompilation(@PathVariable Long compId) {
         log.info(">>>> HTTP_DELETE: Получен запрос на удаление подборки. CompilationID = {}", compId);
         compilationService.deleteCompilation(compId);
     }

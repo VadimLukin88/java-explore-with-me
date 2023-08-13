@@ -1,6 +1,5 @@
 package ru.practicum.events;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -32,10 +31,8 @@ public class AdminEventController {
     public List<EventFullDto> getEventsByAdmin(@RequestParam(required = false) Long[] users,
                                                @RequestParam(required = false) EventState[] states,
                                                @RequestParam(required = false) Long[] categories,
-                                               //@JsonFormat(pattern="yyyy-MM-dd HH:mm:ss")
                                                @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
                                                @RequestParam(required = false) LocalDateTime rangeStart,
-                                               //@JsonFormat(pattern="yyyy-MM-dd HH:mm:ss")
                                                @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
                                                @RequestParam(required = false) LocalDateTime rangeEnd,
                                                @RequestParam(defaultValue = "0") int from,

@@ -72,6 +72,8 @@ public class EventMapper {
             .requestModeration(event.getRequestModeration())
             .state(event.getState().name())
             .title(event.getTitle())
+            .confirmedRequests(0L)
+            .views(0L)
             .build();
     }
 

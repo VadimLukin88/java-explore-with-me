@@ -3,6 +3,7 @@ package ru.practicum.events;
 import ru.practicum.events.dto.*;
 import ru.practicum.events.models.EventState;
 
+import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -16,9 +17,10 @@ public interface EventsService {
                                     Boolean onlyAvailable,
                                     EventSort sort,
                                     int from,
-                                    int size);
+                                    int size,
+                                    HttpServletRequest request);
 
-    EventFullDto getEventById(Long id);
+    EventFullDto getEventById(Long id, HttpServletRequest request);
 
     List<EventShortDto> getUserEvent(Long userId, int from, int size);
 

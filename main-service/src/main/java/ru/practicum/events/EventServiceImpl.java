@@ -1,13 +1,20 @@
 package ru.practicum.events;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.practicum.StatClient;
 import ru.practicum.categories.CategoryRepository;
 import ru.practicum.categories.models.Category;
+import ru.practicum.dto.StatRequestDto;
+import ru.practicum.dto.StatResponseDto;
 import ru.practicum.events.dto.*;
 import ru.practicum.events.models.Event;
 import ru.practicum.events.models.EventState;
@@ -20,31 +27,38 @@ import ru.practicum.requests.models.ParticipationRequest;
 import ru.practicum.users.UserRepository;
 import ru.practicum.users.models.User;
 
-import javax.transaction.Transactional;
+import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-public class EventServiceImpl implements EventsService{
+@Slf4j
+public class EventServiceImpl implements EventsService {
 
     private final EventRepository eventRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final LocationRepository locationRepository;
     private final RequestRepository requestRepository;
+    private final StatClient statClient;
+
+    private final ObjectMapper objectMapper;
+    private static final String APPLICATION = "main-service";
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Autowired
     public EventServiceImpl(EventRepository eventRepository, UserRepository userRepository,
                             CategoryRepository categoryRepository, LocationRepository locationRepository,
-                            RequestRepository requestRepository) {
+                            RequestRepository requestRepository, StatClient statClient, ObjectMapper objectMapper) {
         this.eventRepository = eventRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
         this.locationRepository = locationRepository;
         this.requestRepository = requestRepository;
+        this.statClient = statClient;
+        this.objectMapper = objectMapper;
     }
 
     // Поиск событий (для Public контроллера)
@@ -67,19 +81,23 @@ public class EventServiceImpl implements EventsService{
                                           Boolean onlyAvailable,
                                           EventSort sort,
                                           int from,
-                                          int size) {
-        String searchText;
+                                          int size,
+                                          HttpServletRequest request) {
+        String searchText = null;
 
         if (text != null) {
-            searchText = text.toLowerCase();
-        } else {
-            searchText = text;
+            searchText = "%" + text.toLowerCase() + "%";
         }
-        if (rangeStart == null && rangeEnd == null) {
-            rangeStart = LocalDateTime.now();
-            // тут бы конечно прикрутить какую-то константу (в Postgre и Java разные максимальные даты)
+        if (rangeStart == null) {
+            rangeStart = LocalDateTime.now().minusYears(1000L);
+        }
+        if (rangeEnd == null) {
             rangeEnd = LocalDateTime.now().plusYears(1000L);
         }
+        if (rangeEnd.isBefore(rangeStart)) {
+            throw new ValidationException("Start time after end time", HttpStatus.BAD_REQUEST);
+        }
+
         Pageable pageable;
 
         if (sort.equals(EventSort.EVENT_DATE)) {
@@ -89,23 +107,56 @@ public class EventServiceImpl implements EventsService{
         }
         // Ищем события по фильтру
         List<Event> eventList = eventRepository.findEventsForUser(searchText, Arrays.asList(categories), paid, rangeStart, rangeEnd, pageable);
-        // Преобразуем из в DTO
-        List<EventShortDto> eventDtoList = eventList.stream()
-                                                    .map(EventMapper::mapEventToShortDto)
-                                                    .collect(Collectors.toList());
         // Получаем список ID для найденных Event
         List<Long> eventIds = eventList.stream().map(Event::getId).collect(Collectors.toList());
         // Получаем все подтверждённые запросы для этих Event
-        List<ParticipationRequest> reqList = requestRepository.getByEvent_IdInAndStatus(eventIds, RequestStatus.CONFIRMED);
-        // Считаем для каждого Event кол-во подтверждённых запросов
+        List<ParticipationRequest> reqList = requestRepository.findByEvent_IdInAndStatus(eventIds, RequestStatus.CONFIRMED);
+        // Считаем сколько подтверждённых заявок у каждого Event
+        Map<Long, Long> reqMap = reqList.stream().collect(Collectors.groupingBy(r -> r.getEvent().getId(), Collectors.counting()));
+        // Аналогично для просмотров
+        String[] uris = eventIds.stream().map(eId -> "/events/" + eId).toArray(String[]::new);
+        // Получаем просмотры из сервера статистики
+        Object statResult = statClient.getStats(rangeStart.format(TIME_FORMATTER), rangeEnd.format(TIME_FORMATTER), uris,true)
+                                      .getBody();
+
+        List<StatResponseDto> statRespDto = objectMapper.convertValue(statResult, new TypeReference<List<StatResponseDto>>() {});
+        // Считаем просмотры для каждого Event
+        Map<String, Long> uriHits = statRespDto.stream().collect(Collectors.toMap(sr -> sr.getUri(), sr -> sr.getHits()));
+
+        // Преобразуем Event в DTO
+        List<EventShortDto> eventDtoList;
+
+        if (onlyAvailable) {
+            eventDtoList = eventList.stream()
+                .filter(event -> event.getParticipantLimit() == 0 || event.getParticipantLimit() < reqMap.getOrDefault(event.getId(), 0L))
+                .map(EventMapper::mapEventToShortDto)
+                .collect(Collectors.toList());
+        } else {
+            eventDtoList = eventList.stream()
+                .map(EventMapper::mapEventToShortDto)
+                .collect(Collectors.toList());
+        }
+
+        // Для каждого Event заполняем кол-во подтверждённых запросов и просмотров
         eventDtoList.forEach(eventDto -> {
-                                            eventDto.setConfirmedRequests(
-                                                reqList.stream()
-                                                    .filter(r -> r.getEvent().getId().equals(eventDto.getId()))
-                                                    .count()
-                                            );
+                                            eventDto.setConfirmedRequests(reqMap.getOrDefault(eventDto.getId(), 0L));
+                                            eventDto.setViews(uriHits.getOrDefault("/events/" + eventDto.getId(), 0L));
                                           });
-        // Дописать обогащение статистикой и сделать фильтр - события у которых есть свободные места
+        // Отправляем запрос в сервер статистики
+        try {
+            statClient.hitStats(new StatRequestDto(APPLICATION,
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                LocalDateTime.now().format(TIME_FORMATTER)));
+        } catch (Exception e) {
+            log.info(">>>> Request to statistical server failed!");
+        }
+        // пересортируем, если был запрос сортировать по кол-ву просмотров
+        if (sort.equals(EventSort.VIEWS)) {
+            return eventDtoList.stream()
+                               .sorted(Comparator.comparingLong(EventShortDto::getViews).reversed())
+                               .collect(Collectors.toList());
+        }
         return eventDtoList;
     }
 
@@ -119,7 +170,11 @@ public class EventServiceImpl implements EventsService{
     //В случае, если события с заданным id не найдено, возвращает статус код 404
     @Override
     @Transactional
-    public EventFullDto getEventById(Long id) {
+    public EventFullDto getEventById(Long id, HttpServletRequest request) {
+        LocalDateTime rangeStart = LocalDateTime.now().minusYears(1000L);
+
+        LocalDateTime rangeEnd = LocalDateTime.now().plusYears(1000L);
+
         Event event = eventRepository.findById(id)
                                      .orElseThrow(() -> new DataNotFoundException("Event not found", HttpStatus.NOT_FOUND));
 
@@ -127,10 +182,30 @@ public class EventServiceImpl implements EventsService{
            throw new ValidationException("Event not published", HttpStatus.NOT_FOUND);
         }
         EventFullDto fullDto = EventMapper.mapEventToDto(event);
+        // Получаем кол-во подтверждённых запросов
+        fullDto.setConfirmedRequests(requestRepository.findByEvent_IdInAndStatus(Arrays.asList(id), RequestStatus.CONFIRMED).stream().count());
+        // Получаем просмотры
+        String[] uris = new String[]{"/events/" + id};
 
-        fullDto.setConfirmedRequests(requestRepository.getByEvent_IdInAndStatus(Arrays.asList(id), RequestStatus.CONFIRMED).stream().count());
+        Object statResult = statClient.getStats(rangeStart.format(TIME_FORMATTER), rangeEnd.format(TIME_FORMATTER), uris,true)
+                                      .getBody();
 
-        //заполнить поле views в DTO
+        List<StatResponseDto> statRespDto = objectMapper.convertValue(statResult, new TypeReference<List<StatResponseDto>>() {});
+
+        if (statRespDto.size() == 0) {
+            fullDto.setViews(0L);
+        } else {
+            fullDto.setViews(statRespDto.get(0).getHits());
+        }
+        // Отправляем запрос в сервер статистики
+        try {
+            statClient.hitStats(new StatRequestDto(APPLICATION,
+                request.getRequestURI(),
+                request.getRemoteAddr(),
+                LocalDateTime.now().format(TIME_FORMATTER)));
+        } catch (Exception e) {
+            log.info(">>>> Request to statistical server failed!");
+        }
         return fullDto;
     }
 
@@ -139,11 +214,40 @@ public class EventServiceImpl implements EventsService{
     @Override
     @Transactional
     public List<EventShortDto> getUserEvent(Long userId, int from, int size) {
+        LocalDateTime rangeStart = LocalDateTime.now().minusYears(1000L);
+
+        LocalDateTime rangeEnd = LocalDateTime.now().plusYears(1000L);
+
         Pageable pageable = PageRequest.of(from, size);
         // сделать получение подтверждённых заявок на участие и просмотров событий
-        return eventRepository.getByInitiator_Id(userId, pageable).stream()
+        List<Event> eventList = eventRepository.getByInitiator_Id(userId, pageable);
+
+        List<Long> eventIds = eventList.stream().map(Event::getId).collect(Collectors.toList());
+        // Получаем все подтверждённые запросы для этих Event
+        List<ParticipationRequest> reqList = requestRepository.findByEvent_IdInAndStatus(eventIds, RequestStatus.CONFIRMED);
+        // Считаем сколько подтверждённых заявок у каждого Event
+        Map<Long, Long> reqMap = reqList.stream().collect(Collectors.groupingBy(r -> r.getEvent().getId(), Collectors.counting()));
+        // Получаем просмотры
+        String[] uris = eventIds.stream().map(eId -> "/events/" + eId).toArray(String[]::new);
+
+        Object statResult = statClient.getStats(rangeStart.format(TIME_FORMATTER), rangeEnd.format(TIME_FORMATTER), uris,true)
+                                      .getBody();
+
+        List<StatResponseDto> statRespDto = objectMapper.convertValue(statResult, new TypeReference<List<StatResponseDto>>() {});
+
+        Map<String, Long> uriHits = statRespDto.stream().collect(Collectors.toMap(sr -> sr.getUri(), sr -> sr.getHits()));
+
+        // Преобразуем Event в DTO
+        List<EventShortDto> eventDtoList = eventList.stream()
             .map(EventMapper::mapEventToShortDto)
             .collect(Collectors.toList());
+
+        // Заполняем для каждого Event кол-во подтверждённых запросов и просмотров
+        eventDtoList.forEach(eventDto -> {
+                                            eventDto.setConfirmedRequests(reqMap.getOrDefault(eventDto.getId(), 0L));
+                                            eventDto.setViews(uriHits.getOrDefault("/events/" + eventDto.getId(), 0L));
+                                         });
+        return eventDtoList;
     }
 
     // Добавление нового события (для Private контроллера)
@@ -153,8 +257,8 @@ public class EventServiceImpl implements EventsService{
     public EventFullDto addEvent(Long userId, NewEventDto newEventDto) {
         LocalDateTime now = LocalDateTime.now();
 
-        if(now.plusHours(2L).isAfter(newEventDto.getEventDate())) {
-            throw new ValidationException("Time validation error", HttpStatus.CONFLICT);
+        if (now.plusHours(2L).isAfter(newEventDto.getEventDate())) {
+            throw new ValidationException("Time validation error", HttpStatus.BAD_REQUEST);
         }
         User initiator = userRepository.findById(userId)
                                        .orElseThrow(() -> new DataNotFoundException("User not found", HttpStatus.NOT_FOUND));
@@ -180,12 +284,34 @@ public class EventServiceImpl implements EventsService{
     @Override
     @Transactional
     public EventFullDto getEventById(Long userId, Long eventId) {
+        LocalDateTime now = LocalDateTime.now();
+
+        LocalDateTime past = LocalDateTime.now().minusYears(1000L);
+
         User initiator = userRepository.findById(userId)
                                        .orElseThrow(() -> new DataNotFoundException("User not found", HttpStatus.NOT_FOUND));
 
         Event event = eventRepository.findById(eventId)
                                      .orElseThrow(() -> new DataNotFoundException("Event not found", HttpStatus.NOT_FOUND));
-        return EventMapper.mapEventToDto(event);
+
+        EventFullDto fullDto = EventMapper.mapEventToDto(event);
+        // Получаем кол-во подтверждённых запросов
+        fullDto.setConfirmedRequests(requestRepository.findByEvent_IdInAndStatus(Arrays.asList(eventId), RequestStatus.CONFIRMED).stream().count());
+
+        // Получаем просмотры
+        String[] uris = new String[]{"/events/" + eventId};
+
+        Object statResult = statClient.getStats(past.format(TIME_FORMATTER),now.format(TIME_FORMATTER), uris,true)
+                                       .getBody();
+
+        List<StatResponseDto> statRespDto = objectMapper.convertValue(statResult, new TypeReference<List<StatResponseDto>>() {});
+
+        if (statRespDto.size() == 0) {
+            fullDto.setViews(0L);
+        } else {
+            fullDto.setViews(statRespDto.get(0).getHits());
+        }
+        return fullDto;
     }
 
     // Изменение события добавленного текущим пользователем (для Private контроллера)
@@ -226,8 +352,8 @@ public class EventServiceImpl implements EventsService{
             event.setDescription(updUserRequest.getDescription());
         }
         if (updUserRequest.getEventDate() != null) {
-            if(now.plusHours(2L).isAfter(updUserRequest.getEventDate())) {
-                throw new ValidationException("Time validation error", HttpStatus.CONFLICT);
+            if (now.plusHours(2L).isAfter(updUserRequest.getEventDate())) {
+                throw new ValidationException("Time validation error", HttpStatus.BAD_REQUEST);
             }
             event.setEventDate(updUserRequest.getEventDate());
         }
@@ -267,6 +393,11 @@ public class EventServiceImpl implements EventsService{
                                                LocalDateTime rangeEnd,
                                                int from,
                                                int size) {
+
+        LocalDateTime past = LocalDateTime.now().minusYears(1000L);
+
+        LocalDateTime future = LocalDateTime.now().plusYears(1000L);
+
         List<Long> userList = null, categoryList = null;
 
         List<EventState> stateList = null;
@@ -280,23 +411,42 @@ public class EventServiceImpl implements EventsService{
         if (states != null) {
             stateList = Arrays.asList(states);
         }
-        if (rangeStart == null && rangeEnd == null) {
-            rangeStart = LocalDateTime.now();
-            rangeEnd = LocalDateTime.now().plusYears(1000L);
+        if (rangeStart == null) {
+            rangeStart = past;
+        }
+        if (rangeEnd == null) {
+            rangeEnd = future;
         }
         Pageable pageable = PageRequest.of(from, size, Sort.by("eventDate"));
 
         List<Event> eventList = eventRepository.findEventsForAdmin(userList, stateList, categoryList, rangeStart, rangeEnd, pageable);
-        // Дописать обогащение статистикой и сделать фильтр - события у которых есть свободные места
+        // Получаем список ID для найденных Event
+        List<Long> eventIds = eventList.stream().map(Event::getId).collect(Collectors.toList());
+        // Получаем все подтверждённые запросы для этих Event
+        List<ParticipationRequest> reqList = requestRepository.findByEvent_IdInAndStatus(eventIds, RequestStatus.CONFIRMED);
+        // Считаем сколько подтверждённых заявок у каждого Event
+        Map<Long, Long> reqMap = reqList.stream().collect(Collectors.groupingBy(r -> r.getEvent().getId(), Collectors.counting()));
 
-        List<EventFullDto> eventDtoList = eventList.stream().map(EventMapper::mapEventToDto).collect(Collectors.toList());
+        // Аналогично для просмотров
+        String[] uris = eventIds.stream().map(eId -> "/events/" + eId).toArray(String[]::new);
+        // Получаем просмотры
+        Object statResult = statClient.getStats(past.format(TIME_FORMATTER), future.format(TIME_FORMATTER), uris, true)
+                                      .getBody();
 
-        List<ParticipationRequest> reqList = requestRepository.getByEvent_IdInAndStatus(Arrays.asList(), RequestStatus.CONFIRMED);
+        List<StatResponseDto> statRespDto = objectMapper.convertValue(statResult, new TypeReference<List<StatResponseDto>>() {});
 
+        Map<String, Long> uriHits = statRespDto.stream().collect(Collectors.toMap(sr -> sr.getUri(), sr -> sr.getHits()));
+        // Получаем кол-во просмотров для событий
+        //   statRespDto.forEach(sr -> uriHits.put(sr.getUri(), sr.getHits()));
+
+        // Преобразуем Event в DTO
+        List<EventFullDto> eventDtoList = eventList.stream()
+            .map(EventMapper::mapEventToDto)
+            .collect(Collectors.toList());;
+        // Считаем для каждого Event кол-во подтверждённых запросов и просмотров
         eventDtoList.forEach(eventDto -> {
-                                          eventDto.setConfirmedRequests(reqList.stream()
-                                                                                .filter(r -> r.getEvent().getId() == eventDto.getId())
-                                                                                .count());
+                                            eventDto.setConfirmedRequests(reqMap.getOrDefault(eventDto.getId(), 0L));
+                                            eventDto.setViews(uriHits.getOrDefault("/events/" + eventDto.getId(), 0L));
                                           });
         return eventDtoList;
     }
@@ -315,7 +465,7 @@ public class EventServiceImpl implements EventsService{
         Event event = eventRepository.findById(eventId)
                                      .orElseThrow(() -> new DataNotFoundException("Event not found", HttpStatus.NOT_FOUND));
 
-        if (event.getState().equals(EventState.PUBLISHED)) {
+        if (event.getState().equals(EventState.PUBLISHED) || event.getState().equals(EventState.CANCELED)) {
             throw new ValidationException("Incorrect status", HttpStatus.CONFLICT);
         }
 
@@ -324,7 +474,7 @@ public class EventServiceImpl implements EventsService{
         }
 
         if (updAdminRequest.getCategory() != null && ! updAdminRequest.getCategory().equals(event.getCategory().getId())) {
-            Category category = categoryRepository.findById( updAdminRequest.getCategory())
+            Category category = categoryRepository.findById(updAdminRequest.getCategory())
                 .orElseThrow(() -> new DataNotFoundException("Category not found", HttpStatus.NOT_FOUND));
 
             event.setCategory(category);
@@ -333,8 +483,8 @@ public class EventServiceImpl implements EventsService{
             event.setDescription(updAdminRequest.getDescription());
         }
         if (updAdminRequest.getEventDate() != null) {
-            if(now.plusHours(1L).isAfter(updAdminRequest.getEventDate())) {
-                throw new ValidationException("Time validation error", HttpStatus.CONFLICT);
+            if (now.plusHours(1L).isAfter(updAdminRequest.getEventDate())) {
+                throw new ValidationException("Time validation error", HttpStatus.BAD_REQUEST);
             }
             event.setEventDate(updAdminRequest.getEventDate());
         }
@@ -349,6 +499,9 @@ public class EventServiceImpl implements EventsService{
         }
         if (updAdminRequest.getRequestModeration() != null) {
             event.setRequestModeration(updAdminRequest.getRequestModeration());
+        }
+        if (updAdminRequest.getTitle() != null) {
+            event.setTitle(updAdminRequest.getTitle());
         }
         if (updAdminRequest.getStateAction() != null) {
             if (updAdminRequest.getStateAction().equals(AdminStateAction.PUBLISH_EVENT)) {

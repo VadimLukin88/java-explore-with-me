@@ -2,6 +2,7 @@ package ru.practicum.events;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.requests.RequestService;
@@ -46,6 +47,7 @@ public class PrivateEventController {
 
     // Добавление нового события
     @PostMapping("/{userId}/events")
+    @ResponseStatus(HttpStatus.CREATED)
     public EventFullDto addEvent(@PathVariable Long userId,
                                  @Valid @RequestBody NewEventDto newEventDto) {
         log.info(">>>> HTTP_POST: Добавление нового события. New EventDTO = {}", newEventDto);
@@ -71,8 +73,8 @@ public class PrivateEventController {
 
     // Получение информации о запросах на участие в событии текущего пользователя
     @GetMapping("/{userId}/events/{eventId}/requests")
-    public ParticipationRequestDto getRequestForEvent(@PathVariable Long userId,
-                                                      @PathVariable Long eventId) {
+    public List<ParticipationRequestDto> getRequestForEvent(@PathVariable Long userId,
+                                                            @PathVariable Long eventId) {
         log.info(">>>> HTTP_GET: Получение пользователем запросов на участие в событии. User ID = {}, Event ID = {}", userId, eventId);
         return requestService.getRequestForEvent(userId, eventId);
     }

@@ -6,10 +6,9 @@ import ru.practicum.compilations.dto.CompilationDto;
 import ru.practicum.compilations.dto.NewCompilationDto;
 import ru.practicum.compilations.dto.UpdateCompilationRequest;
 import ru.practicum.compilations.models.Compilation;
-import ru.practicum.events.models.Event;
+import ru.practicum.events.EventMapper;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.stream.Collectors;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class CompilationMapper {
@@ -37,7 +36,7 @@ public class CompilationMapper {
             .id(compilation.getId())
             .title(compilation.getTitle())
             .pinned(compilation.getPinned())
-            .events(null)
+            .events(compilation.getEventList().stream().map(EventMapper::mapEventToShortDto).collect(Collectors.toList()))
             .build();
     }
 }
