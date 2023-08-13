@@ -85,6 +85,8 @@ public class EventServiceImpl implements EventsService {
                                           HttpServletRequest request) {
         String searchText = null;
 
+        List<Long> catList = null;
+
         if (text != null) {
             searchText = "%" + text.toLowerCase() + "%";
         }
@@ -97,6 +99,9 @@ public class EventServiceImpl implements EventsService {
         if (rangeEnd.isBefore(rangeStart)) {
             throw new ValidationException("Start time after end time", HttpStatus.BAD_REQUEST);
         }
+        if (categories != null && categories.length > 0) {
+            catList = Arrays.asList(categories);
+        }
 
         Pageable pageable;
 
@@ -106,7 +111,7 @@ public class EventServiceImpl implements EventsService {
             pageable = PageRequest.of(from, size);
         }
         // Ищем события по фильтру
-        List<Event> eventList = eventRepository.findEventsForUser(searchText, Arrays.asList(categories), paid, rangeStart, rangeEnd, pageable);
+        List<Event> eventList = eventRepository.findEventsForUser(searchText, catList, paid, rangeStart, rangeEnd, pageable);
         // Получаем список ID для найденных Event
         List<Long> eventIds = eventList.stream().map(Event::getId).collect(Collectors.toList());
         // Получаем все подтверждённые запросы для этих Event
@@ -144,10 +149,12 @@ public class EventServiceImpl implements EventsService {
                                           });
         // Отправляем запрос в сервер статистики
         try {
-            statClient.hitStats(new StatRequestDto(APPLICATION,
-                request.getRequestURI(),
-                request.getRemoteAddr(),
-                LocalDateTime.now().format(TIME_FORMATTER)));
+            StatRequestDto statDto = new StatRequestDto(APPLICATION,
+                                                        request.getRequestURI(),
+                                                        request.getRemoteAddr(),
+                                                        LocalDateTime.now().format(TIME_FORMATTER));
+            statClient.hitStats(statDto);
+            log.info(">>>> Send request to statistical server. Stat DTO = {}", statDto);
         } catch (Exception e) {
             log.info(">>>> Request to statistical server failed!");
         }
@@ -199,10 +206,12 @@ public class EventServiceImpl implements EventsService {
         }
         // Отправляем запрос в сервер статистики
         try {
-            statClient.hitStats(new StatRequestDto(APPLICATION,
-                request.getRequestURI(),
-                request.getRemoteAddr(),
-                LocalDateTime.now().format(TIME_FORMATTER)));
+            StatRequestDto statDto = new StatRequestDto(APPLICATION,
+                                                        request.getRequestURI(),
+                                                        request.getRemoteAddr(),
+                                                        LocalDateTime.now().format(TIME_FORMATTER));
+            statClient.hitStats(statDto);
+            log.info(">>>> Send request to statistical server. Stat DTO = {}", statDto);
         } catch (Exception e) {
             log.info(">>>> Request to statistical server failed!");
         }
