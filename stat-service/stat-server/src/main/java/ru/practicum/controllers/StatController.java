@@ -7,10 +7,11 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.dto.StatRequestDto;
 import ru.practicum.dto.StatResponseDto;
+import ru.practicum.exceptions.StatValidationException;
 import ru.practicum.services.StatService;
 
 import javax.validation.Valid;
-import javax.validation.ValidationException;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -45,7 +46,10 @@ public class StatController {
             startTime = LocalDateTime.parse(start, formatter);
             endTime = LocalDateTime.parse(end, formatter);
         } catch (DateTimeParseException e) {
-            throw new ValidationException("Can not parse time in request parameter");
+            throw new StatValidationException("Can not parse time in request parameter", HttpStatus.BAD_REQUEST);
+        }
+        if (endTime.isBefore(startTime)) {
+            throw new StatValidationException("End time before start time", HttpStatus.BAD_REQUEST);
         }
         return statService.getStatistics(startTime, endTime, uris, unique);
     }
