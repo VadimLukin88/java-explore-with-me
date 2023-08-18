@@ -10,3 +10,4 @@ Repository for ExploreWithMe educational project.
 событие на повторную модерацию.
 
 ### Ссылка на pull-request
+https://github.com/VadimLukin88/java-explore-with-me/pull/5
