@@ -1,6 +1,7 @@
 package ru.practicum.events.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -35,4 +36,7 @@ public class EventFullDto {
     private String state;           // Список состояний жизненного цикла события. enum
     private String title;           // Заголовок
     private Long views;             // Количество просмотрев события
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String adminComment;    // Комментарий админа. Будем ставить его с помощью сеттера, только когда отдаём Dto
+                                    // владельцу события или админу.
 }
