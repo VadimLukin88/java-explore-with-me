@@ -39,4 +39,6 @@ public interface EventsService {
                                         int size);
 
     EventFullDto updateEvent(Long eventId, UpdateEventAdminRequest updateEventAdminRequest);
+
+    EventStatusUpdateResult batchUpdateEventStatus(List<EventStatusUpdateRequest> eventDtoList);
 }

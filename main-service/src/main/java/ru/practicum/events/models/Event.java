@@ -49,4 +49,6 @@ public class Event {
     private LocalDateTime createdOn;        // Дата и время создания события
     @Column(name = "published_on")
     private LocalDateTime publishedOn;      // Дата и время публикации события
+    @Column(name = "admin_comment")
+    private String adminComment;        // Комментарий администратора после ревью
 }

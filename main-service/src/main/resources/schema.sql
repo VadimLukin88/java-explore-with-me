@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS events (
   state VARCHAR(50) NOT NULL,
   created_on TIMESTAMP NOT NULL,
   published_on TIMESTAMP,
+  admin_comment VARCHAR,
   CONSTRAINT PK_EVENTS PRIMARY KEY (id),
   CONSTRAINT FK_CATEGORY FOREIGN KEY (category_id) REFERENCES categories (id),
   CONSTRAINT FK_INITIATOR FOREIGN KEY (initiator_id) REFERENCES users (id),

@@ -24,4 +24,6 @@ public class UpdateEventAdminRequest {
     private AdminStateAction stateAction;     // Новое состояние события. Enum
     @Size(min = 3, max = 120)
     private String title;           // Новый заголовок
+    @Size(min = 3, max = 2000)
+    private String adminComment;    // комментарий администратора
 }

@@ -130,7 +130,7 @@ public class EventServiceImpl implements EventsService {
 
         // Преобразуем Event в DTO
         List<EventShortDto> eventDtoList;
-
+        // Дополнительно фильтруем по параметру onlyAvailable
         if (onlyAvailable) {
             eventDtoList = eventList.stream()
                 .filter(event -> event.getParticipantLimit() == 0 || event.getParticipantLimit() < reqMap.getOrDefault(event.getId(), 0L))
@@ -141,7 +141,6 @@ public class EventServiceImpl implements EventsService {
                 .map(EventMapper::mapEventToShortDto)
                 .collect(Collectors.toList());
         }
-
         // Для каждого Event заполняем кол-во подтверждённых запросов и просмотров
         eventDtoList.forEach(eventDto -> {
                                             eventDto.setConfirmedRequests(reqMap.getOrDefault(eventDto.getId(), 0L));
@@ -320,6 +319,8 @@ public class EventServiceImpl implements EventsService {
         } else {
             fullDto.setViews(statRespDto.get(0).getHits());
         }
+        // Вставляем комментарий от администратора
+        fullDto.setAdminComment(event.getAdminComment());
         return fullDto;
     }
 
@@ -524,7 +525,64 @@ public class EventServiceImpl implements EventsService {
                 event.setState(EventState.CANCELED);
             }
         }
-        return EventMapper.mapEventToDto(eventRepository.save(event));
+        if (updAdminRequest.getAdminComment() != null) {
+            event.setAdminComment(updAdminRequest.getAdminComment());
+        }
+
+        EventFullDto result = EventMapper.mapEventToDto(eventRepository.save(event));
+
+        result.setAdminComment(event.getAdminComment());
+        return result;
     }
 
+    // Массовое обновление статуса Event (для Admin контроллера) с возможностью оставлять комментарий для инициатора события
+    public EventStatusUpdateResult batchUpdateEventStatus(List<EventStatusUpdateRequest> eventDtoList) {
+        if (eventDtoList == null || eventDtoList.size() == 0) {
+            return new EventStatusUpdateResult();
+        }
+        List<Long> eventIds = eventDtoList.stream().map(dto -> dto.getEventId()).collect(Collectors.toList());
+        // Получаем из БД события
+        Map<Long, Event> eventMap = eventRepository.findAllById(eventIds).stream().collect(Collectors.toMap(e -> e.getId(), e -> e));
+
+        // проверяем, что все обновляемые события в статусе PENDING
+        eventMap.values().forEach(event -> {
+                                    if (!event.getState().equals(EventState.PENDING)) {
+                                        throw new ValidationException("Event with Id = " + event.getId()
+                                                                      + " has wrong state", HttpStatus.CONFLICT);
+                                    }
+        });
+        Event event;
+
+        // Заполняем статусы у событий, полученных в запросе
+        for (EventStatusUpdateRequest dto : eventDtoList) {
+            event = eventMap.get(dto.getEventId());
+            if (dto.getStateAction().equals(AdminStateAction.PUBLISH_EVENT)) {
+                event.setState(EventState.PUBLISHED);
+            }
+            if (dto.getStateAction().equals(AdminStateAction.REJECT_EVENT)) {
+                event.setState(EventState.CANCELED);
+            }
+            event.setAdminComment(dto.getAdminComment());
+            eventMap.put(event.getId(), event);
+        }
+
+        List<EventFullDto> resultDto = eventRepository.saveAll(eventMap.values()).stream()
+                                                                                 .map(EventMapper::mapEventToDto)
+                                                                                 .collect(Collectors.toList());
+
+        EventStatusUpdateResult result = new EventStatusUpdateResult();
+        // Заполняем финальный Dto, который отправим в респонсе. Проставляем комменты админа, так как маппер их не заполняет.
+        // Сделано для того, чтобы комменты админа выдавались только в эндпоинтах для владельца события.
+        resultDto.forEach(dto -> {
+                                    if (dto.getState().equals(EventState.PUBLISHED.name())) {
+                                        dto.setAdminComment(eventMap.get(dto.getId()).getAdminComment());
+                                        result.getPublishedEvents().add(dto);
+                                    }
+                                    if (dto.getState().equals(EventState.CANCELED.name())) {
+                                        dto.setAdminComment(eventMap.get(dto.getId()).getAdminComment());
+                                        result.getRejectedEvents().add(dto);
+                                    }
+        });
+        return result;
+    }
 }

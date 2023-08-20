@@ -1,0 +1,422 @@
+{
+	"info": {
+		"_postman_id": "a2672908-d5ab-450c-8857-c1bc1daa15c4",
+		"name": "Test Explore With Me - Additional feature",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "26927050"
+	},
+	"item": [
+		{
+			"name": "Получение всех событий, ожидающих публикации",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Полученный список должен содержать 10 событий\", function() {",
+							"    pm.expect(target.length).to.equal(10, \"Длина полученного списка не равна 10\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/pending",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"pending"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Получение двух неопубликованных событий",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Полученный список должен содержать 2 события\", function() {",
+							"    pm.expect(target.length).equal(2, \"Длина полученного списка не равна 2\");",
+							"    pm.collectionVariables.set(\"firstEventId\", target[0].id);",
+							"    pm.collectionVariables.set(\"secondEventId\", target[1].id);",
+							"    pm.collectionVariables.set(\"firstUser\", target[0].initiator.id);",
+							"    pm.collectionVariables.set(\"secondUser\", target[1].initiator.id);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/pending?from=0&size=2",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"pending"
+					],
+					"query": [
+						{
+							"key": "from",
+							"value": "0"
+						},
+						{
+							"key": "size",
+							"value": "2"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Публикуем первое неопубликованное событие",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Статус события должен поменяться на PUBLISHED\", function() {",
+							"    pm.expect(target.id).equal(parseInt(pm.collectionVariables.get(\"firstEventId\")), \"Id полученного сообщения не равен отправленному Id\");",
+							"    pm.expect(target.state).equal('PUBLISHED', \"Статус сообщения не равен PUBLISHED\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"stateAction\": \"PUBLISH_EVENT\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/{{firstEventId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"{{firstEventId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Отклоняем второе неопубликованное событие",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Статус события должен поменяться на CANCELED и содержать коммент админа\", function() {",
+							"    pm.expect(target.id).equal(parseInt(pm.collectionVariables.get(\"secondEventId\")),\"Id полученного события не равен отправленному Id\");",
+							"    pm.expect(target.state).equal('CANCELED', \"Статус полученного события не равен CANCELED\");",
+							"    pm.expect(target.adminComment).equal('Это какая-то дичь!', \"Комментарий администратора не равен переданному в запросе\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"stateAction\": \"REJECT_EVENT\", \"adminComment\" : \"Это какая-то дичь!\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/{{secondEventId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"{{secondEventId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Получение пользователем своего события по Id. В ответе есть комментарий администратора",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Полученное событие должно содержать комментарий администратора\", function() {",
+							"    pm.expect(target.id).to.equal(parseInt(pm.collectionVariables.get(\"secondEventId\")), \"Id полученного события не равен Id запрошенного\");",
+							"    pm.expect(target.initiator.id).to.equal(parseInt(pm.collectionVariables.get(\"secondUser\")), \"Id пользователя в событии не равен полученному Id пользователя\");",
+							"    pm.expect(target.adminComment).to.equal('Это какая-то дичь!', \"Полученный комментарий не равен отправленному\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/users/{{secondUser}}/events/{{secondEventId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"users",
+						"{{secondUser}}",
+						"events",
+						"{{secondEventId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Получение неопубликованных событий. Для последующего batchUpdate",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Полученный список должен содержать 3 события\", function() {",
+							"    pm.expect(target.length).equal(3, \"Длина полученного списка не равна 3\");",
+							"    pm.collectionVariables.set(\"firstEventId\", target[0].id);",
+							"    pm.collectionVariables.set(\"secondEventId\", target[1].id);",
+							"    pm.collectionVariables.set(\"firdEventId\", target[2].id);",
+							"    pm.collectionVariables.set(\"firstUser\", target[0].initiator.id);",
+							"    pm.collectionVariables.set(\"secondUser\", target[1].initiator.id);",
+							"    pm.collectionVariables.set(\"firdUser\", target[2].initiator.id);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/pending?from=0&size=3",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"pending"
+					],
+					"query": [
+						{
+							"key": "from",
+							"value": "0"
+						},
+						{
+							"key": "size",
+							"value": "3"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Массовое изменение статуса событий с добавлением комментария администратора",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Код ответа должен быть 200, и содержать тело ответа в формате JSON\", function() {",
+							"    pm.response.to.be.ok;",
+							"    pm.response.to.be.withBody;",
+							"    pm.response.to.be.json;",
+							"});",
+							"",
+							"const target = pm.response.json();",
+							"",
+							"pm.test(\"Полученный список должен содержать 3 события\", function() {",
+							"    pm.expect(target.publishedEvents.length).equal(2, \"Длина получнного списка не равна 2\");",
+							"    pm.expect(target.rejectedEvents.length).equal(1, \"Длина получнного списка не равна 1\");",
+							"});",
+							"",
+							"pm.test(\"Отклоненное событие должно содержать комментарий администратора\", function() {",
+							"    pm.expect(target.rejectedEvents[0].id).equal(parseInt(pm.collectionVariables.get(\"firdEventId\")), \"Id полученного события не равно Id отправленного\");",
+							"    pm.expect(target.rejectedEvents[0].adminComment).equal('И это какая-то дичь!', \"Полученный комментарий администратора не равен отправленному\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "[{\"eventId\": {{firstEventId}}, \"stateAction\" : \"PUBLISH_EVENT\"},  {\"eventId\": {{secondEventId}}, \"stateAction\" : \"PUBLISH_EVENT\"}, {\"eventId\": {{firdEventId}}, \"stateAction\" : \"REJECT_EVENT\", \"adminComment\": \"И это какая-то дичь!\"}]",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/admin/events/batch-update",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"admin",
+						"events",
+						"batch-update"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "firstEventId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "secondEventId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "firstUser",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "secondUser",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "firdEventId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "firdUser",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
